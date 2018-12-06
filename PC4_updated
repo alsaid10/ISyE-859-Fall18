@@ -1,3 +1,33 @@
+## Areen Alsaid & Ammad Amin 
+
+##### 1.  ##The problem we want to address involves detecting mind wandering through steering behavior and signals. 
+We hope our model can help drivers recognize when their minds wander so they can become safer drivers. 
+
+##### 2. The data was collected from 9 drivers as they were driving on a monotonous highway which can be a boring task. 
+They were periodically probed and asked whether their mind was wandering or not (at the time of the probe). 
+The data includes driving behavior data (speed, steering wheel angle, braking input, accelerator input, lane deviation) 
+along with their response to the mind wandering probe which is our dependent variable.We invistigaetd the driving behavior
+in the 10 seconds preceding a probe as predictor of mind wandering. We used two tyoes of features. 
+First is simple common features (mean and standard deviation) of steering, accelarator input, speed and lane deviation. 
+Second, we used more complex features such as entropy, spike, and curvature.
+
+##### 3. The validity of our algorithm is very limited. According to the UTOS framework, here's a detailed explanation 
+of why the validity is limited.
+  U: Units -->  Our data was collected from 9 participant at the University of George Mason. 9 peopl is a very small 
+  number that does not represent a population.
+  T: Tratment --> All participants had the exact same driving scenario
+  O: Observations --> The analyzed data only considered driving behavior (should in future invistigate EEG data as well.)
+  S: Setting -->  The experimnet was run in a driving simulator, which may not apply to real driving conditions.
+
+Also, construct validity is limited. Driver were periodically asked to report the state, however, we are not sure that they were actaully reporting mind wandering rather than fatigue.
+
+
+
+
+
+
+
+
 ####################### Basic Features #####################
 #################################################
 ############### Prepare workspace ############### 
