@@ -1,0 +1,324 @@
+####################### Basic Features #####################
+#################################################
+############### Prepare workspace ############### 
+#################################################
+
+
+
+library(tidyverse)
+library(ggplot2)
+library(caret)
+library(caTools)
+library(pROC)
+library(devtools)
+devtools::install_github("robjhyndman/tsfeatures") #to install package from github
+library(tsfeatures)
+devtools::install_github("robjhyndman/tscompdata") #to install package from github
+library(tscompdata)
+library(forecast)
+library(psych)
+devtools::install_github("robjhyndman/anomalous") #to install package from github
+library(anomalous)
+library(e1071)
+library(ranger)
+
+
+
+mindWanderingData = read_csv("/Users/areenalsaid/Google Drive/Research/Mind Wandering/R codes/Mind_Wandering_edits/mindWandering2/mindWanderingRawData.csv", col_names = TRUE)[, 1:21]
+
+
+###### We are filtering out the 10 second after the probe (to only keep the 10 seconds prior)
+mindWanderingData = mindWanderingData %>% filter(`preToneOrPostTone(1=preTone 2=postTone)` == '1')
+
+
+
+mindWanderingData = mindWanderingData %>% filter(postWindowAfterEnd==0, driveTimestamp>100) # Remove data occur at end of drive or very start
+mindWanderingData = mindWanderingData %>% filter(subject!=7) # Remove first drive of subject 7
+names(mindWanderingData)[4]="state"
+
+## Remove probe windows with incomplete data
+mindWanderingData = mindWanderingData %>% group_by(subject, day, drive, probeNumber, state, `preToneOrPostTone(1=preTone 2=postTone)`) %>%
+  mutate(n = n()) %>% filter(n==300)
+
+
+###### Select the variables we want
+mindWanderingData = mindWanderingData %>% select(c(1,2,3,4,11,13,16,17,19,20))
+
+
+###### Rename the dependent variable
+
+
+###### Group and summarize the data
+mindWanderingData = mindWanderingData  %>% group_by(subject, day, drive, probeNumber, state) %>% summarise(steering.m = mean(steerInDegrees), speed.m = mean(speedInMPH), acc.m = mean(acceleratorInput), ld.m = mean(laneDeviation), steering.sd = sd(steerInDegrees), speed.sd = sd(speedInMPH), acc.sd = sd(acceleratorInput),ld.sd = sd(laneDeviation) )
+
+
+###### Set seed for reproducability
+
+set.seed(400)
+
+
+###### Shuffle rows
+
+mw.model = mindWanderingData[,-c(1,2,3,4)]
+rows = sample(nrow(mw.model))
+mw.model = mw.model[rows,]
+mw.model$state = as.factor(mw.model$state)
+levels(mw.model$state) = c("MW", "EN")
+
+
+#### Split data into 80/20
+split = round(nrow(mw.model)*0.8)
+train = mw.model [1:split,]
+test = mw.model[(split+1):nrow(mw.model),]
+
+control <- trainControl(method="repeatedcv", number=5, repeats=1)
+# train the LVQ model
+set.seed(7)
+modelranger1 <- train(state~., data=mw.model, method="ranger", trControl=control, importance = 'impurity')
+# train the GBM model
+set.seed(7)
+modelGlm1 <- train(state~., data=mw.model, method="glm", family = "binomial",
+                   trControl=control)
+# train the SVM model
+set.seed(7)
+modelSvm1 <- train(state~., data=mw.model, method="svmRadial", trControl=control)
+# collect resamples
+results <- resamples(list(RandomForests=modelranger1, LogisticRegression = modelGlm1, SVM=modelSvm1))
+# summarize the distributions
+summary(results)
+# boxplots of results
+bwplot(results2)
+# dot plots of results
+dotplot(results2)
+
+
+
+
+model.glm = glm(state ~., family = "binomial", train)
+
+
+### Plot variance Importance
+
+### Plot variance importance
+
+var_importance = varImp(modelranger1)
+
+v<-as.vector(varImp(modelranger1))
+v = v$importance
+#v = v[1:10,]
+w<-(as.vector((colnames(mw.model[,-1]))))
+#w= w[1:10]
+DF<-cbind(w,v)
+DF = as.data.frame(DF)
+DF$Overall = as.numeric(DF$Overall)
+DF = DF %>% filter(Overall>14)
+
+
+
+#DF = DF[(1:10),]
+simple = ggplot(DF, aes(x=reorder(w, Overall), y=Overall, fill = as.numeric(Overall)))+ 
+  geom_bar(stat="identity", position="dodge")+ coord_flip()+
+  ylab("Variable Importance")+
+  xlab("")+
+  ggtitle("Information Value Summary")+
+  guides(fill=F)+
+  theme_bw()
+scale_fill_gradient(low="red", high="blue")
+ggsave( "simple.png", device = "png", height = 4, width = 6)
+
+
+
+################### Complex Features ####################
+
+
+
+#################################################
+############### Prepare workspace ############### 
+#################################################
+
+# Set working directory
+setwd("~/Google Drive/Research/Mind Wandering/Journal_MW")
+
+# Clean workspace and set seed
+rm(list=ls()) 
+set.seed(888)
+
+# Load libraries
+library(tidyverse)
+library(ggplot2)
+library(devtools)
+devtools::install_github("robjhyndman/tsfeatures") #to install package from github
+library(tsfeatures)
+devtools::install_github("robjhyndman/tscompdata") #to install package from github
+library(tscompdata)
+library(forecast)
+library(caret)
+library(caTools)
+library(pROC)
+library(psych)
+devtools::install_github("robjhyndman/anomalous") #to install package from github
+library(anomalous)
+library(mlbench)
+
+# import the dataset
+mw.df = read.csv("mindWanderingRawData.csv")
+
+#################################################
+############# Begining of the code ############## 
+#################################################
+
+# Remove data occur at end of drive or very start
+names(mw.df)[4] = "state"
+names(mw.df)[8] = "mwAwareness"
+names(mw.df)[11] = "preToneOrPostTone"
+
+mw.df$state[mw.df$state=="1"] = "mw"
+mw.df$state[mw.df$state=="2"] = "ot"
+mw.df$state = as.factor(mw.df$state)
+mw.df$subject = as.factor(mw.df$subject)
+
+
+mw.df = mw.df %>% filter(postWindowAfterEnd==0, driveTimestamp>100) # Remove data occur at end of drive or very start
+mw.df = mw.df %>% filter(subject!=7) # Remove first drive of subject 7
+
+## Remove probe windows with incomplete data
+mw.df = mw.df %>% group_by(subject, day, drive, probeNumber, state, preToneOrPostTone) %>%
+  mutate(n = n()) %>% filter(n==300)
+
+# Select the variables we will be working with
+mw.df = mw.df %>% select(c(1,2,3,4,11,13,16,17,19,20))
+
+# Filter only 10s after the probe
+mw.df = mw.df  %>% filter(preToneOrPostTone==1)
+
+
+mw.df[11] = rep(1:1236,rep(300,1236))
+test = mw.df %>% ungroup() %>% select(c(4,7,8,9,10,11))
+
+
+## start a for loop to calculate features for each time series and store them in a list
+## initialize the dataframe and name the coloumns 
+features <- data.frame(matrix(ncol = 18, nrow = 12))
+names(features)[1:15] = c("mean", "var", "x_acf1", "trend", "linearity", "curvature", 
+                          "entropy", "lumpiness", "spike", "max_level_shift", "max_var_shift", 
+                          "flat_spots", "crossing_points", "max_kl_shift", "time_kl_shift")
+
+names(features)[16] = "state"
+names(features)[17] = "subject"
+names(features)[18] = "variable"
+
+# initialize j
+j=1
+
+for (i in seq(1,370800,300)) {
+  temp = mw.df[i:(i+299), c(7,8,9,10)]
+  #state = mw.df[i,4]
+  features[j:(j+3),(1:15)] <- bind_cols(
+    tsfeatures(temp,
+               c("acf_features","entropy","lumpiness",
+                 "flat_spots","crossing_points")),
+    tsfeatures(temp,"stl_features", s.window='periodic', 
+               robust=TRUE),
+    tsfeatures(temp, "max_kl_shift", width=48),
+    tsfeatures(temp,
+               c("mean","var"), scale=FALSE, na.rm=TRUE),
+    tsfeatures(temp,
+               c("max_level_shift","max_var_shift"), trim=TRUE)) %>%
+    select(mean, var, x_acf1, trend, linearity, curvature, 
+           entropy, lumpiness, spike, max_level_shift, max_var_shift, 
+           flat_spots, crossing_points, max_kl_shift, time_kl_shift)
+  print(j)
+  
+  features[j:(j+3),(16)] = mw.df[i,4]
+  features[j:(j+3),(17)] = mw.df[i,1]
+  features[j,(18)] = "speed"
+  features[(j+1),(18)] = "steering"
+  features[(j+2),(18)] = "accelerator"
+  features[(j+3),(18)] = "lane.deviation"
+  
+  j = j+4
+  print(i)
+}
+
+features$instance = rep(1:1236, each = 4)
+
+### transform to long
+names(features)[18]="x"
+df= features %>% 
+  gather(variable, value, -(c(state,subject, x, instance)))
+
+df$var.name = NA
+df2 = df %>% group_by(instance) %>% 
+  unite( var.name, variable , x) %>% 
+  spread(var.name, value)
+  
+###### Set seed for reproducability
+set.seed(400)
+
+#### Fit a model with the features data
+#### Split data into 80/20
+
+mw.complex = df2[,c(1, 4:63)]
+mw.complex$state = as.factor(mw.complex$state)
+
+control <- trainControl(method="repeatedcv", number=5, repeats=1)
+# train the LVQ model
+set.seed(7)
+modelranger2 <- train(state~., data=mw.complex, method="ranger", trControl=control, importance = 'impurity')
+# train the GBM model
+set.seed(7)
+modelGlm2 <- train(state~., data=mw.complex, method="glm", family = "binomial",
+                   trControl=control)
+# train the SVM model
+set.seed(7)
+modelSvm2 <- train(state~., data=mw.complex, method="svmRadial", trControl=control)
+# collect resamples
+results2 <- resamples(list(RandomForests=modelranger2, LogisticRegression = modelGlm2, SVM=modelSvm2))
+# summarize the distributions
+summary(results2)
+# boxplots of results
+bwplot(results2)
+# dot plots of results
+dotplot(results2)
+modelranger2$modelInfo
+
+### Plot variance importance
+
+var_importance = varImp(modelranger2)
+
+v<-as.vector(varImp(modelranger2))
+v = v$importance
+#v = v[1:10,]
+w<-(as.vector((colnames(mw.complex[,-1]))))
+#w= w[1:10]
+DF<-cbind(w,v)
+DF = as.data.frame(DF)
+DF$Overall = as.numeric(DF$Overall)
+DF = DF %>% filter(Overall>14)
+
+#DF = DF[(1:10),]
+ggplot(DF, aes(x=reorder(w, Overall), y=Overall, fill = as.numeric(Overall)))+ 
+     geom_bar(stat="identity", position="dodge")+ coord_flip()+
+     ylab("Variable Importance")+
+     xlab("")+
+     ggtitle("Information Value Summary")+
+     guides(fill=F)+
+  theme_bw()
+  
+ggsave( "complex.png", device = "png", height = 4, width = 6)
+
+
+p = predict(model.glm2, test2, type = "response")
+p_class2 = ifelse(p>0.7, 2, 1)
+
+confusionMatrix(as.factor(p_class2),  as.factor(test2$state))
+
+x=reorder(w,v)
+x
+
+
+
+
+
+
+
